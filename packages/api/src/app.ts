@@ -22,6 +22,7 @@ import referralRoutes from './routes/referral.js'
 import paymentRoutes from './routes/payments.js'
 import vitalsRoutes from './routes/vitals.js'
 import { auditMiddleware } from './middleware/audit.js'
+import { sanitize } from './middleware/sanitize.js'
 import { versionMiddleware, deprecationWarning } from './middleware/version.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
 import { readFileSync } from 'node:fs'
@@ -44,6 +45,7 @@ redis.connect().catch(() => {})
 app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+app.use(sanitize)
 app.use(requestLogger)
 app.use(methodOverride('X-HTTP-Method'))
 app.use(passport.initialize())
