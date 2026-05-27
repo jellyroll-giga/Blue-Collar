@@ -78,24 +78,26 @@ export default function WorkersViewToggle({ workers, hasFilters }: Props) {
       </div>
 
       {/* Content */}
-      {view === "list" ? (
-        workers.length === 0 ? (
-          <EmptyState
-            variant={hasFilters ? "no-search-results" : "no-workers"}
-            ctaHref="/workers"
-          />
+      <div className="min-h-[500px]">
+        {view === "list" ? (
+          workers.length === 0 ? (
+            <EmptyState
+              variant={hasFilters ? "no-search-results" : "no-workers"}
+              ctaHref="/workers"
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {workers.map((w) => (
+                <WorkerCard key={w.id} worker={w} />
+              ))}
+            </div>
+          )
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {workers.map((w) => (
-              <WorkerCard key={w.id} worker={w} />
-            ))}
+          <div className="h-[500px]">
+            <WorkerMap workers={workers} />
           </div>
-        )
-      ) : (
-        <div className="h-[500px]">
-          <WorkerMap workers={workers} />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

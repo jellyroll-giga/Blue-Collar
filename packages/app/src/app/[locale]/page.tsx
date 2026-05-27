@@ -12,12 +12,16 @@ export default function HomePage() {
       <Navbar />
       <main>
         <Hero />
-        <Suspense fallback={<CategoriesSkeleton />}>
-          <Categories />
-        </Suspense>
-        <Suspense fallback={<FeaturedWorkersSkeleton />}>
-          <FeaturedWorkers />
-        </Suspense>
+        <div className="min-h-[320px]">
+          <Suspense fallback={<CategoriesSkeleton />}>
+            <Categories />
+          </Suspense>
+        </div>
+        <div className="min-h-[520px]">
+          <Suspense fallback={<FeaturedWorkersSkeleton />}>
+            <FeaturedWorkers />
+          </Suspense>
+        </div>
         <HowItWorks />
       </main>
       <Footer />

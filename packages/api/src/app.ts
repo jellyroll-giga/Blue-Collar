@@ -20,6 +20,7 @@ import responseTimeRoutes from './routes/response-time.js'
 import insuranceRoutes from './routes/insurance.js'
 import referralRoutes from './routes/referral.js'
 import paymentRoutes from './routes/payments.js'
+import vitalsRoutes from './routes/vitals.js'
 import { auditMiddleware } from './middleware/audit.js'
 import { versionMiddleware, deprecationWarning } from './middleware/version.js'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js'
@@ -56,6 +57,7 @@ app.use('/api', responseTimeRoutes)
 app.use('/api/workers', insuranceRoutes)
 app.use('/api/referrals', referralRoutes)
 app.use('/api/payments', paymentRoutes)
+app.use('/api', vitalsRoutes)
 
 app.get('/health', async (_req, res) => {
   const checks: Record<string, { status: 'ok' | 'error'; latencyMs?: number; error?: string }> = {}

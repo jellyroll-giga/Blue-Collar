@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { BadgeCheck, MapPin } from "lucide-react";
 import type { Worker } from "@/types";
 import BookmarkButton from "./BookmarkButton";
@@ -40,9 +41,11 @@ export default function WorkerCard({ worker }: { worker: Worker }) {
         {/* Avatar + name */}
         <div className="flex items-center gap-3">
           {worker.avatar ? (
-            <img
+            <Image
               src={worker.avatar}
               alt={worker.name}
+              width={56}
+              height={56}
               className="h-14 w-14 rounded-full object-cover ring-2 ring-blue-100"
             />
           ) : (
