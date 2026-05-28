@@ -484,3 +484,75 @@ fn test_paginated_single_item_pages() {
         assert_eq!(page.get(0).unwrap(), Symbol::new(&env, expected));
     }
 }
+
+// ---------------------------------------------------------------------------
+// update_reputation — Issue #522
+// ---------------------------------------------------------------------------
+
+fn setup_with_admin() -> (Env, Address, Address) {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract = env.register_contract(None, RegistryContract);
+    let admin = Address::generate(&env);
+    // Initialize so admin gets ROLE_ADMIN and ROLE_REP_MGR
+    RegistryContractClient::new(&env, &contract).initialize(&admin);
+    (env, contract, admin)
+}
+
+#[test]
+fn test_update_reputation_success() {
+    let (env, contract, admin) = setup_with_admin();
+    let owner = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+
+    let client = RegistryContractClient::new(&env, &contract);
+    assert_eq!(client.get_worker(&Symbol::new(&env, "w1")).unwrap().reputation, 0);
+
+    client.update_reputation(&admin, &Symbol::new(&env, "w1"), &7500);
+    assert_eq!(client.get_worker(&Symbol::new(&env, "w1")).unwrap().reputation, 7500);
+}
+
+#[test]
+fn test_update_reputation_max_value() {
+    let (env, contract, admin) = setup_with_admin();
+    let owner = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+
+    RegistryContractClient::new(&env, &contract)
+        .update_reputation(&admin, &Symbol::new(&env, "w1"), &10_000);
+    assert_eq!(
+        RegistryContractClient::new(&env, &contract)
+            .get_worker(&Symbol::new(&env, "w1")).unwrap().reputation,
+        10_000
+    );
+}
+
+#[test]
+#[should_panic(expected = "Score out of range")]
+fn test_update_reputation_out_of_range() {
+    let (env, contract, admin) = setup_with_admin();
+    let owner = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+
+    RegistryContractClient::new(&env, &contract)
+        .update_reputation(&admin, &Symbol::new(&env, "w1"), &10_001);
+}
+
+#[test]
+#[should_panic(expected = "Missing role")]
+fn test_update_reputation_non_admin_panics() {
+    let (env, contract, _admin) = setup_with_admin();
+    let owner = Address::generate(&env);
+    make_worker(&env, &contract, "w1", &owner);
+    let stranger = Address::generate(&env);
+    RegistryContractClient::new(&env, &contract)
+        .update_reputation(&stranger, &Symbol::new(&env, "w1"), &5000);
+}
+
+#[test]
+#[should_panic(expected = "Worker not found")]
+fn test_update_reputation_nonexistent_worker() {
+    let (env, contract, admin) = setup_with_admin();
+    RegistryContractClient::new(&env, &contract)
+        .update_reputation(&admin, &Symbol::new(&env, "ghost"), &5000);
+}
