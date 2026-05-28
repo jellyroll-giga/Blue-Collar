@@ -1,4 +1,8 @@
 // Entry point for BlueCollar API
+// Tracing must be initialised before any other imports so auto-instrumentation patches load first
+import { initializeTracing } from './monitoring/tracing.js'
+initializeTracing()
+
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
