@@ -11,26 +11,13 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
 
-  pgbouncer:
-    image: bitnami/pgbouncer:1.22.1
+  redis:
+    image: redis:7-alpine
     restart: unless-stopped
-    depends_on:
-      - db
     ports:
-      - "5433:5432"
-    environment:
-      POSTGRESQL_HOST: db
-      POSTGRESQL_PORT: 5432
-      POSTGRESQL_USERNAME: bluecollar
-      POSTGRESQL_PASSWORD: bluecollar
-      POSTGRESQL_DATABASE: bluecollar
-      PGBOUNCER_DATABASE: bluecollar
-      PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_MAX_CLIENT_CONN: 1000
-      PGBOUNCER_DEFAULT_POOL_SIZE: 25
-      PGBOUNCER_MIN_POOL_SIZE: 5
-      PGBOUNCER_RESERVE_POOL_SIZE: 5
-      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
 
   api:
     build:
@@ -38,12 +25,13 @@ services:
       dockerfile: packages/api/Dockerfile
     restart: unless-stopped
     depends_on:
-      - pgbouncer
+      - db
+      - redis
     ports:
       - "3000:3000"
     environment:
-      # Route through PgBouncer (transaction mode — compatible with Prisma)
-      DATABASE_URL: postgresql://bluecollar:bluecollar@pgbouncer:5432/bluecollar?pgbouncer=true&connection_limit=1
+      DATABASE_URL: postgresql://bluecollar:bluecollar@db:5432/bluecollar
+      REDIS_URL: redis://redis:6379
       NODE_ENV: production
     env_file:
       - packages/api/.env
@@ -69,3 +57,4 @@ services:
 
 volumes:
   db_data:
+  redis_data:
