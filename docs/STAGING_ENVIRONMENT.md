@@ -34,7 +34,7 @@ aws eks update-kubeconfig --name bluecollar-staging --region us-east-1
 
 ### Deploy Staging Infrastructure
 ```bash
-cd deploy/terraform
+cd terraform
 
 # Initialize Terraform
 terraform init

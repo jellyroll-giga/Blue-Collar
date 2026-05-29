@@ -93,7 +93,38 @@ Use a production-safe connection string in `DATABASE_URL`:
 DATABASE_URL=postgresql://bluecollar_app:<password>@db-host:5432/bluecollar?sslmode=require
 ```
 
-## 2.4 PgBouncer Connection Pooling
+## 2.4 Terraform Infrastructure Workflow
+
+The repository includes a reproducible Terraform workflow under `terraform/`:
+
+- `terraform/` contains the root module, `modules/` for `vpc`, `rds`, `ecs`, `s3`, and `cdn`, and `environments/` with staging and production tfvars.
+- Remote state is stored in S3 with DynamoDB locking using the `bluecollar-terraform-state` bucket and `bluecollar-terraform-locks` table.
+- Create or select workspaces with:
+
+```bash
+cd terraform
+terraform init
+terraform workspace select staging || terraform workspace new staging
+terraform workspace select production || terraform workspace new production
+```
+
+- Plan changes for staging or production using environment files:
+
+```bash
+terraform plan -var-file=environments/staging.tfvars
+terraform plan -var-file=environments/production.tfvars
+```
+
+- Apply changes after verification:
+
+```bash
+terraform apply -var-file=environments/staging.tfvars
+terraform apply -var-file=environments/production.tfvars
+```
+
+The repo CI also runs a Terraform plan step on pull requests that touch `terraform/**`.
+
+## 2.5 PgBouncer Connection Pooling
 
 In production, route all API connections through PgBouncer to cap the number of real PostgreSQL connections and handle high concurrency efficiently.
 
