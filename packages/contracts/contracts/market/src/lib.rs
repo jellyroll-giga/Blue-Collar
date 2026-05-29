@@ -243,6 +243,27 @@ impl MarketContract {
         env.storage().instance().set(&DataKey::Config, &config);
     }
 
+    /// Update the treasury (fee recipient) address. Caller must hold [`ROLE_ADMIN`].
+    ///
+    /// # Parameters
+    /// - `caller`: Must hold `ROLE_ADMIN`; `require_auth()` is enforced.
+    /// - `new_treasury`: New address that will receive collected protocol fees.
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `caller` does not hold `ROLE_ADMIN`.
+    /// - `"Not initialized"` if [`initialize`] has not been called.
+    pub fn set_treasury(env: Env, caller: Address, new_treasury: Address) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &caller);
+        let mut config: Config = env
+            .storage()
+            .instance()
+            .get(&DataKey::Config)
+            .expect("Not initialized");
+        config.fee_recipient = new_treasury.clone();
+        env.storage().instance().set(&DataKey::Config, &config);
+        env.events().publish((symbol_short!("TrsSet"), caller), new_treasury);
+    }
+
     // -------------------------------------------------------------------------
     // Internal RBAC helpers
     // -------------------------------------------------------------------------
@@ -494,6 +515,10 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
         client.transfer(&from, &to, &worker_amount);
         if fee > 0 {
             client.transfer(&from, &config.fee_recipient, &fee);
+            env.events().publish(
+                (symbol_short!("FeeTaken"),),
+                (fee, config.fee_recipient),
+            );
         }
 
         env.events().publish(
@@ -1120,6 +1145,103 @@ mod tests {
         t.client().tip(&t.payer, &t.worker, &t.token_addr, &500_000);
         assert_eq!(t.token_balance(&t.worker), 500_000);
         assert_eq!(t.token_balance(&t.payer), 500_000);
+    }
+
+    // -------------------------------------------------------------------------
+    // Fee mechanism tests (#532)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_tip_with_fee_deducts_correctly() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let payer = Address::generate(&env);
+        let worker = Address::generate(&env);
+        let treasury = Address::generate(&env);
+
+        let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_addr = token_id.address();
+        StellarAssetClient::new(&env, &token_addr).mint(&payer, &1_000_000);
+
+        let contract_id = env.register_contract(None, MarketContract);
+        // Initialize with 100 bps (1%) fee, treasury as recipient
+        MarketContractClient::new(&env, &contract_id).initialize(&admin, &100, &treasury);
+
+        let client = MarketContractClient::new(&env, &contract_id);
+        client.tip(&payer, &worker, &token_addr, &100_000);
+
+        // fee = 100_000 * 100 / 10_000 = 1_000
+        let token = TokenClient::new(&env, &token_addr);
+        assert_eq!(token.balance(&worker), 99_000);
+        assert_eq!(token.balance(&treasury), 1_000);
+        assert_eq!(token.balance(&payer), 900_000);
+    }
+
+    #[test]
+    fn test_tip_zero_fee_sends_full_amount() {
+        let t = TestEnv::new(); // initialized with fee_bps = 0
+        let treasury_before = t.token_balance(&t.admin); // admin is fee_recipient in TestEnv
+        t.client().tip(&t.payer, &t.worker, &t.token_addr, &200_000);
+        // No fee deducted — worker gets full amount
+        assert_eq!(t.token_balance(&t.worker), 200_000);
+        assert_eq!(t.token_balance(&t.payer), 800_000);
+        // Treasury balance unchanged
+        assert_eq!(t.token_balance(&t.admin), treasury_before);
+    }
+
+    #[test]
+    fn test_set_treasury_updates_fee_recipient() {
+        let t = TestEnv::new();
+        let new_treasury = Address::generate(&t.env);
+
+        // Update treasury (admin holds ROLE_ADMIN)
+        t.client().set_treasury(&t.admin, &new_treasury);
+
+        // Verify config reflects new treasury
+        let config = t.client().get_config();
+        assert_eq!(config.fee_recipient, new_treasury);
+    }
+
+    #[test]
+    #[should_panic(expected = "Missing role")]
+    fn test_set_treasury_non_admin_panics() {
+        let t = TestEnv::new();
+        let stranger = Address::generate(&t.env);
+        let new_treasury = Address::generate(&t.env);
+        t.client().set_treasury(&stranger, &new_treasury);
+    }
+
+    #[test]
+    fn test_tip_fee_goes_to_updated_treasury() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let admin = Address::generate(&env);
+        let payer = Address::generate(&env);
+        let worker = Address::generate(&env);
+        let old_treasury = Address::generate(&env);
+        let new_treasury = Address::generate(&env);
+
+        let token_id = env.register_stellar_asset_contract_v2(admin.clone());
+        let token_addr = token_id.address();
+        StellarAssetClient::new(&env, &token_addr).mint(&payer, &1_000_000);
+
+        let contract_id = env.register_contract(None, MarketContract);
+        MarketContractClient::new(&env, &contract_id).initialize(&admin, &200, &old_treasury);
+
+        let client = MarketContractClient::new(&env, &contract_id);
+        // Update treasury to new_treasury
+        client.set_treasury(&admin, &new_treasury);
+
+        client.tip(&payer, &worker, &token_addr, &100_000);
+
+        // fee = 100_000 * 200 / 10_000 = 2_000
+        let token = TokenClient::new(&env, &token_addr);
+        assert_eq!(token.balance(&new_treasury), 2_000);
+        assert_eq!(token.balance(&old_treasury), 0);
+        assert_eq!(token.balance(&worker), 98_000);
     }
 
     #[test]
