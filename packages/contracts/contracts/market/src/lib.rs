@@ -171,6 +171,8 @@ pub enum DataKey {
     Arbitration(Symbol),
     /// Persistent storage — list of approved arbitrator addresses.
     Arbitrators,
+    /// Persistent storage — current storage schema version (u32), used by [`migrate`].
+    SchemaVersion,
 }
 
 // =============================================================================
@@ -206,6 +208,8 @@ impl MarketContract {
         assert!(fee_bps <= MAX_FEE_BPS, "fee_bps exceeds maximum (500)");
         // Store admin in persistent storage
         env.storage().persistent().set(&DataKey::Admin, &admin);
+        // Set initial schema version
+        env.storage().persistent().set(&DataKey::SchemaVersion, &1u32);
         // Store config in instance storage
         let config = Config { fee_bps, fee_recipient };
         env.storage().instance().set(&DataKey::Config, &config);
@@ -509,8 +513,11 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
 
         let client = token::Client::new(&env, &token_addr);
 
-        let fee: i128 = (amount * config.fee_bps as i128) / 10_000;
-        let worker_amount = amount - fee;
+        let fee: i128 = amount
+            .checked_mul(config.fee_bps as i128)
+            .and_then(|v| v.checked_div(10_000))
+            .expect("Fee overflow");
+        let worker_amount = amount.checked_sub(fee).expect("Fee underflow");
 
         client.transfer(&from, &to, &worker_amount);
         if fee > 0 {
@@ -1053,6 +1060,67 @@ fn get_role_members(env: &Env, role: &Symbol) -> Vec<Address> {
     /// # Parameters
     /// - `new_wasm_hash`: The hash returned by `stellar contract install` for the new WASM.
     ///
+    // -------------------------------------------------------------------------
+    // Schema migration (#535)
+    // -------------------------------------------------------------------------
+
+    /// Return the current storage schema version.
+    pub fn get_schema_version(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::SchemaVersion)
+            .unwrap_or(1u32)
+    }
+
+    /// Run version-specific storage migration logic.
+    ///
+    /// Guards:
+    /// - Caller must hold `ROLE_ADMIN`.
+    /// - `expected_version` must equal the current schema version (prevents double-run
+    ///   and out-of-order migrations).
+    /// - After success the version is bumped to `expected_version + 1`.
+    ///
+    /// # Panics
+    /// - `"Missing role"` if `admin` does not hold `ROLE_ADMIN`.
+    /// - `"Wrong schema version"` if current version ≠ `expected_version`.
+    ///
+    /// # Events
+    /// Emits `("Migrated",)` with data `(expected_version, expected_version + 1)`.
+    pub fn migrate(env: Env, admin: Address, expected_version: u32) {
+        Self::require_role(&env, &Symbol::new(&env, ROLE_ADMIN), &admin);
+
+        let current: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::SchemaVersion)
+            .unwrap_or(1u32);
+
+        assert!(current == expected_version, "Wrong schema version");
+
+        // ---- version-specific migration logic --------------------------------
+        if expected_version == 1 {
+            // Example: no structural change needed for v1→v2 in this release.
+        }
+        // ----------------------------------------------------------------------
+
+        let new_version = expected_version.checked_add(1).expect("Version overflow");
+        env.storage().persistent().set(&DataKey::SchemaVersion, &new_version);
+
+        env.events().publish(
+            (symbol_short!("Migrated"),),
+            (expected_version, new_version),
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Upgrade
+    // -------------------------------------------------------------------------
+
+    /// Upgrade the contract WASM in-place, preserving the contract ID and all storage.
+    ///
+    /// # Parameters
+    /// - `new_wasm_hash`: The hash returned by `stellar contract install` for the new WASM.
+    ///
     /// # Panics
     /// - `"Not initialized"` if [`initialize`] has not been called.
     /// - `"Unauthorized"` if caller does not match the stored admin.
@@ -1473,6 +1541,55 @@ mod tests {
          assert_eq!(t.token_balance(&t.payer), 1_000_000);
          assert!(t.client().get_multisig_escrow(&id).unwrap().cancelled);
      }
+
+    // -------------------------------------------------------------------------
+    // Migration tests (#535)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_initial_schema_version_is_1() {
+        let t = TestEnv::new();
+        assert_eq!(t.client().get_schema_version(), 1u32);
+    }
+
+    #[test]
+    fn test_migrate_v1_to_v2_bumps_version() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &1u32);
+        assert_eq!(t.client().get_schema_version(), 2u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "Wrong schema version")]
+    fn test_migrate_double_run_panics() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &1u32);
+        t.client().migrate(&t.admin, &1u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "Wrong schema version")]
+    fn test_migrate_wrong_version_panics() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &2u32);
+    }
+
+    #[test]
+    #[should_panic(expected = "Missing role")]
+    fn test_migrate_non_admin_panics() {
+        let t = TestEnv::new();
+        let stranger = Address::generate(&t.env);
+        t.client().migrate(&stranger, &1u32);
+    }
+
+    #[test]
+    fn test_migrate_sequential_versions() {
+        let t = TestEnv::new();
+        t.client().migrate(&t.admin, &1u32);
+        assert_eq!(t.client().get_schema_version(), 2u32);
+        t.client().migrate(&t.admin, &2u32);
+        assert_eq!(t.client().get_schema_version(), 3u32);
+    }
  }
 
  // ---------------------------------------------------------------------------
