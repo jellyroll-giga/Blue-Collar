@@ -4,6 +4,7 @@ import BookmarkButton from "@/components/BookmarkButton";
 import QRCodeButton from "@/components/QRCodeButton";
 import ContactModal from "@/components/ContactModal";
 import ZoomableAvatar from "@/components/ZoomableAvatar";
+import ShareWorkerButton from "@/components/ShareWorkerButton";
 import type { Worker } from "@/types";
 
 interface Props {
@@ -57,6 +58,7 @@ export function WorkerHeader({ worker, averageRating, reviewCount }: Props) {
       </div>
 
       <div className="flex items-center gap-2">
+        <ShareWorkerButton workerName={worker.name} category={worker.category.name} />
         <BookmarkButton workerId={worker.id} />
         <ContactModal workerId={worker.id} workerName={worker.name} />
       </div>
